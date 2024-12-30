@@ -206,15 +206,17 @@ void* timer_proc(void* arg)
 
 int main(int argc, char *argv[])
 {
-    if(argc != 2) {
-        printf("Erabilera: %s <clock_maiztasuna> \n", argv[0]);
+    if(argc < 4) {
+        printf("Erabilera: %s <clock_maiztasuna> <sched_maiztasun> <proc_maiztasun> \n", argv[0]);
         return 1;
     }
 
     printf("Sistema martxan jartzen... \n");
 
     printf("Erlojuaren maiztasuna: %d \n", atoi(argv[1]));
-    int maiztasuna = atoi(argv[1]);
+    int maiztasunaErloju = atoi(argv[1]);
+    int maiztasunaScheduler = atoi(argv[2]);
+    int maiztasunaProc = atoi(argv[3]);
 
     // Mutexa eta cond aldagaiak hasieratu
     if (pthread_mutex_init(&mutex, NULL) != 0) {
@@ -240,9 +242,9 @@ int main(int argc, char *argv[])
     printf("Mutexa eta cond aldagaiak martxan jarri dira. \n");
 
     // Hariak martxan jarri
-    pthread_create(&p1, NULL, erloju, (void*) &maiztasuna); // if-ak jarri ondo sortu direla konprobatzeko (0 bada ondo)
-    pthread_create(&p2, NULL, timer_sched, (void*) &maiztasuna);
-    pthread_create(&p3, NULL, timer_proc, (void*) &maiztasuna);
+    pthread_create(&p1, NULL, erloju, (void*) &maiztasunaErloju); // if-ak jarri ondo sortu direla konprobatzeko (0 bada ondo)
+    pthread_create(&p2, NULL, timer_sched, (void*) &maiztasunaScheduler);
+    pthread_create(&p3, NULL, timer_proc, (void*) &maiztasunaProc);
    
     prozesuenIlara = ilara_sortu();
 
