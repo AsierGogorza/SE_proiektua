@@ -2,31 +2,37 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <stdlib.h>
 
 #define TENP_KOP 2
 
 pthread_mutex_t mutex;
-pthread_cond_t cond1, cond2, cond3;
+pthread_cond_t cond1, cond2;
 
 pthread_t p1, p2, p3;
 int clck, sched, proc;
 
-int kontP, kontT, egina = 0;
+int kontP, kontT, egina, execDenbora = 0;
+
+typedef enum {
+    READY,
+    RUNNING,
+    WAIT,
+    TERMINATED
+} state;
 
 typedef struct {
-    int total_hari_kop; // cpu_kop * core_kop * hari_kop
-    int *harimap; // Harien bitmap
-    haria *hariak;
-} machine;
+    pid_t pid;
+    state egoera;
+    int lehentasuna; // Ezkerretik eskuinea lehentasun handienetik txikienera: 5 4 3 2 1
+    int execDenboraP;
+    int kont;
+} PCB;
 
 typedef struct {
     int id;
     PCB *pcb;
-} haria
-
-typedef struct {
-    pid_t pid;
-} PCB;
+} haria; // Pasar x num de haris al ejecutar. En el main crear x haris con el pcb NULL.
 
 // Prozesua ilaran gordetzeko elementua.
 typedef struct {
@@ -42,7 +48,14 @@ typedef struct {
     pthread_mutex_t lock; // Ilaran eragiketak egiterakoan blokeatu muturrak ondo adierazteko.
 } ProcessQueue;
 
+typedef struct {
+    int total_hari_kop; // cpu_kop * core_kop * hari_kop
+    int *harimap; // Harien bitmap
+    haria *hariak;
+} machine;
+
 ProcessQueue* prozesuenIlara;
+
 
 //***** METODO LAGUNTZAILEAK *****//
 
@@ -53,8 +66,15 @@ PCB* pcb_sortu(int kont){
         return NULL;
     }
 
-    pcbB->pid = kont; // PCB-aren pid-a erazagutu
+    pcbB->pid = kont; // PCB-aren pid-a erazagutu    
+    pcbB->egoera = READY; // PCB-aren egoera erazagutu
+    int lehentasuna = (rand() % (5 - 1 + 1)) + 1;
+    pcbB->lehentasuna = lehentasuna;
+    int iraupena = (rand() % (3 - 1 + 1)) + 1;
+    pcbB->execDenboraP = iraupena;
+    pcbB->kont = iraupena;
 
+    printf("%d prozesua sortu da %d lehentasunarekin eta %d txanda egongo da bizirik.\n", kont, lehentasuna, iraupena);
     return pcbB;
 }
 
@@ -94,28 +114,33 @@ void enqueue(ProcessQueue *ilara, PCB *pcb) {
     pthread_mutex_unlock(&ilara->lock);
 }
 
-PCB* dequeue(ProcessQueue *ilara) {
+PCB* dequeue(ProcessQueue *ilara, QueueElem *kendu) {
     pthread_mutex_lock(&ilara->lock);
     if (isEmpty(ilara)) {
         printf("Ez daude elementurik kentzeko.\n");
         pthread_mutex_unlock(&ilara->lock);
         return NULL; // Return NULL if queue is empty
     }
-
-    QueueElem *burua = ilara->front; // Lortu buruan dagoen elementua.
-    PCB *pcb = burua->pcb; // Kendutako elementuaren pcb-a gorde.
-    ilara->front = ilara->front->next; // Ilararen burua eguneratu.
-
-    if (ilara->front == NULL) {
-        ilara->rear = NULL; // Ilara hustu bada (burua == NULL) buztana NULL bezala eguneratu.
+    
+    if (ilara->front->pcb->pid == kendu->pcb->pid) {
+        ilara->front = ilara->front->next;
+    } else {
+        QueueElem* momentukoa = ilara->front;
+        QueueElem* hurrengoa = momentukoa->next;
+        while (hurrengoa != NULL) {
+            if (hurrengoa->pcb->pid == kendu->pcb->pid) {
+                momentukoa->next = kendu->next;
+                break;
+            }
+            momentukoa = momentukoa->next;
+            hurrengoa = momentukoa->next;
+        }
     }
+    
+    printf("%d PID-a duen prozesua ilaratik kendu da.\n", kendu->pcb->pid);
 
-    pthread_cond_broadcast(&cond3); // Abixatu leku bat egin dela
-
-    free(burua); // Free the old front node
     ilara->kont--; // Decrement kont
     pthread_mutex_unlock(&ilara->lock);
-    return pcb;
 }
 
 PCB* peek(ProcessQueue* q) {
@@ -126,13 +151,103 @@ PCB* peek(ProcessQueue* q) {
     return q->front->pcb;
 }
 
+void prozesua_hasi (ProcessQueue* q) {
+    QueueElem* momentukoaL = q->front;
+    QueueElem* execL = NULL;
+    int lehentasunHandienaL = 0;
+    while (momentukoaL->next != NULL) {
+        if (momentukoaL->pcb->lehentasuna > lehentasunHandienaL) {
+            execL = momentukoaL;
+        }
+        momentukoaL = momentukoaL->next;            
+    }
+
+    execL->pcb->egoera == RUNNING;
+    printf("%d PID-a duen prozesua hasi da.\n", execL->pcb->pid);
+    printf("%d PID-a duen prozesuari %d falta zaio.\n", execL->pcb->pid, execL->pcb->kont);
+    execL->pcb->kont--;
+}
+
+void prozesua_bukatu (ProcessQueue* q, QueueElem* momentukoa) {
+    if (isEmpty(q)) {
+        printf("Prozesu guztiak bukatu dira.\n");
+    } else {
+        momentukoa->pcb->egoera = TERMINATED;
+        printf("%d PID-a duen prozesua bukatu da.\n", momentukoa->pcb->pid);
+        dequeue(q, momentukoa);
+    }
+    
+}
+void ilararen_administrazioa (ProcessQueue* q) {
+
+    if (isEmpty(q)) {
+        printf("Ilaran ez daude prozesurik.\n");
+    } else {
+        QueueElem* momentukoa = q->front;
+        QueueElem* exekutatu = NULL;
+        int pidRunning = -1;
+        if (q->kont > 1) {
+            int lehentasunaRunning = 0;
+            while (momentukoa->next != NULL) {
+                if (momentukoa->pcb->egoera == RUNNING) {
+                    lehentasunaRunning = momentukoa->pcb->lehentasuna;
+                    pidRunning = momentukoa->pcb->pid;
+                    break;
+                }
+                momentukoa = momentukoa->next;
+            }
+
+            printf("\nLehentasuna Running %d\n", lehentasunaRunning);
+            printf("PID Running %d\n", pidRunning);
+
+            QueueElem* momentukoa2 = q->front;
+            while (momentukoa2->next != NULL) {
+                if (momentukoa2->pcb->lehentasuna > lehentasunaRunning) {
+                    if (momentukoa2->pcb->pid != pidRunning) {
+                        exekutatu = momentukoa2;
+                        break;
+                    }
+                }
+                momentukoa2 = momentukoa2->next;            
+            }
+        } else {
+            q->front->pcb->egoera = RUNNING;
+        }
+        
+        if (momentukoa->pcb->kont <= 0) {
+            prozesua_bukatu(q, momentukoa);
+            prozesua_hasi(q);
+        } else {
+            if (exekutatu != NULL) {
+                exekutatu->pcb->egoera = WAIT;
+                momentukoa->pcb->egoera = RUNNING;
+                
+                printf("Lehentasuna dela eta %d PID-a duen prozesua itxoin behar du %d PID-a duen prozesua bukatu arte.\n", exekutatu->pcb->pid, momentukoa->pcb->pid);
+                printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoa->pcb->pid, momentukoa->pcb->kont);
+                momentukoa->pcb->kont--;
+            } else {
+                if (momentukoa->pcb->kont == momentukoa->pcb->execDenboraP) {
+                    printf("%d PID-a duen prozesua hasi da.\n", momentukoa->pcb->pid);
+                }
+                
+                printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoa->pcb->pid, momentukoa->pcb->kont);
+                momentukoa->pcb->kont--;
+            }
+        }
+
+        
+    }  
+}
+
+
+
 //***** METODOAK *****//
 
 void *erloju(void *arg)
 {
     pthread_mutex_lock(&mutex); // Mutexa blokeatu
     int maiztasuna = *(int*) arg;
-    int kontL = 0;
+    int kontL = 1;
     egina = 0;
     while(1) {
 
@@ -159,18 +274,19 @@ void* timer_sched(void* arg)
     pthread_mutex_lock(&mutex); // Erlojuak askatzen duen mutexa hartu 
     int maiztasuna = *(int*) arg;
 
-    int kontL;
+    int kontL = 1;
+    int aldia = 0;
     while(1) {
-        
         kontL++;
         egina++;
 
         if (kontL == maiztasuna) {
-            kontL = 0;
+            aldia++;
+            kontL = 1;
+            printf("\nTIMER_SCHED %d\n", aldia);
 
-            printf("Schedulerrak eragiketak egiten ditu. \n");
+            ilararen_administrazioa(prozesuenIlara);
         }
-
 
         pthread_cond_signal(&cond1); //clock-a "askatu" cond1 aldagaia aktibatuz
 
@@ -183,16 +299,21 @@ void* timer_proc(void* arg)
     pthread_mutex_lock(&mutex); //clock-ak askatzen duen mutexa hartu
     int maiztasuna = *(int*) arg;
 
-    int kontL = 0;
+    int kontL = 1;
+    int aldia = 0;
     while(1) {
 
         kontL++;
         egina++;
 
         if (kontL == maiztasuna) {
+            aldia++;
+            printf("\nTIMER_PROC %d\n", aldia);
             kontL = 0;
 
-            printf("Prozesu bat sortu da, pid = %d \n", kontP);
+            PCB* pcbL = pcb_sortu(kontP);
+            enqueue(prozesuenIlara, pcbL);
+            printf("Prozesu kopurua: %d\n", prozesuenIlara->kont);
             kontP++;
         }
 
@@ -206,15 +327,19 @@ void* timer_proc(void* arg)
 
 int main(int argc, char *argv[])
 {
-    if(argc != 2) {
-        printf("Erabilera: %s <clock_maiztasuna> \n", argv[0]);
+    if(argc != 5) {
+        printf("Erabilera: %s <clock_maiztasuna> <schdl_maiztasuna> <proc_maiztasuna> <hari_kopurua>\n", argv[0]);
         return 1;
     }
 
     printf("Sistema martxan jartzen... \n");
 
-    printf("Erlojuaren maiztasuna: %d \n", atoi(argv[1]));
-    int maiztasuna = atoi(argv[1]);
+    int maiztasunaE = atoi(argv[1]);
+    int maiztasunaS = atoi(argv[2]);
+    int maiztasunaP = atoi(argv[3]);
+    printf("Erlojuaren maiztasuna: %d \n", maiztasunaE);
+    int hari_kop = atoi(argv[4]);
+    printf("Hari kopurua: %d \n", hari_kop);
 
     // Mutexa eta cond aldagaiak hasieratu
     if (pthread_mutex_init(&mutex, NULL) != 0) {
@@ -232,17 +357,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (pthread_cond_init(&cond3, NULL) != 0) {
-        printf("\n3. kondizio hasieraketan arazo bat egon da. \n");
-        return 1;
-    }
-
     printf("Mutexa eta cond aldagaiak martxan jarri dira. \n");
 
     // Hariak martxan jarri
-    pthread_create(&p1, NULL, erloju, (void*) &maiztasuna); // if-ak jarri ondo sortu direla konprobatzeko (0 bada ondo)
-    pthread_create(&p2, NULL, timer_sched, (void*) &maiztasuna);
-    pthread_create(&p3, NULL, timer_proc, (void*) &maiztasuna);
+    pthread_create(&p1, NULL, erloju, (void*) &maiztasunaE); // if-ak jarri ondo sortu direla konprobatzeko (0 bada ondo)
+    pthread_create(&p2, NULL, timer_sched, (void*) &maiztasunaS);
+    pthread_create(&p3, NULL, timer_proc, (void*) &maiztasunaP);
    
     prozesuenIlara = ilara_sortu();
 
@@ -259,7 +379,6 @@ int main(int argc, char *argv[])
     pthread_mutex_destroy(&mutex);
     pthread_cond_destroy(&cond1);
     pthread_cond_destroy(&cond2);
-    pthread_cond_destroy(&cond3);
 
     printf("Mutexa eta cond aldagaiak ezabatuak \n");
 
