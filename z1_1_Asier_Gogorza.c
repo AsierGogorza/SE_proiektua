@@ -137,7 +137,7 @@ PCB* dequeue(ProcessQueue *ilara, QueueElem *kendu) {
         }
     }
     
-    printf("%d PID-a duen prozesua ilaratik kendu da.\n", kendu->pcb->pid);
+    //printf("%d PID-a duen prozesua ilaratik kendu da.\n", kendu->pcb->pid);
 
     ilara->kont--; // Decrement kont
     pthread_mutex_unlock(&ilara->lock);
@@ -155,16 +155,17 @@ void prozesua_hasi (ProcessQueue* q) {
     QueueElem* momentukoaL = q->front;
     QueueElem* execL = NULL;
     int lehentasunHandienaL = 0;
-    while (momentukoaL->next != NULL) {
+    while (momentukoaL != NULL) {
         if (momentukoaL->pcb->lehentasuna > lehentasunHandienaL) {
             execL = momentukoaL;
+            lehentasunHandienaL = momentukoaL->pcb->lehentasuna;
         }
         momentukoaL = momentukoaL->next;            
     }
 
-    execL->pcb->egoera == RUNNING;
-    printf("%d PID-a duen prozesua hasi da.\n", execL->pcb->pid);
+    printf("%d PID-a duen prozesua hasi da.\n",execL->pcb->pid);
     printf("%d PID-a duen prozesuari %d falta zaio.\n", execL->pcb->pid, execL->pcb->kont);
+    execL->pcb->egoera = RUNNING;
     execL->pcb->kont--;
 }
 
@@ -183,59 +184,60 @@ void ilararen_administrazioa (ProcessQueue* q) {
     if (isEmpty(q)) {
         printf("Ilaran ez daude prozesurik.\n");
     } else {
-        QueueElem* momentukoa = q->front;
+        QueueElem* momentukoa = NULL;
+        QueueElem* momentukoaGerorako = NULL;
         QueueElem* exekutatu = NULL;
         int pidRunning = -1;
-        if (q->kont > 1) {
+        if (q->kont > 1) { // Ilaran prozesu bat baino gehiago badago gertatu daiteke prozesu bat aktibatuta ez egotea.
+            momentukoa = q->front;
             int lehentasunaRunning = 0;
-            while (momentukoa->next != NULL) {
-                if (momentukoa->pcb->egoera == RUNNING) {
-                    lehentasunaRunning = momentukoa->pcb->lehentasuna;
-                    pidRunning = momentukoa->pcb->pid;
-                    break;
+            while (momentukoa != NULL) {
+                if (momentukoa->pcb->egoera == RUNNING) { // Aurkitu aktibatuta dagoena.
+                    if (momentukoa->pcb->kont <= 0) { // Begiratu ea bukatu den. Bukatu bada berria aukeratu.
+                        prozesua_bukatu(q, momentukoa);
+                        prozesua_hasi(q);
+                        break;
+                    } else {
+                        lehentasunaRunning = momentukoa->pcb->lehentasuna;
+                        pidRunning = momentukoa->pcb->pid;
+                        momentukoaGerorako = momentukoa;
+                        break;
+                    }
                 }
                 momentukoa = momentukoa->next;
             }
 
-            printf("\nLehentasuna Running %d\n", lehentasunaRunning);
-            printf("PID Running %d\n", pidRunning);
-
-            QueueElem* momentukoa2 = q->front;
-            while (momentukoa2->next != NULL) {
-                if (momentukoa2->pcb->lehentasuna > lehentasunaRunning) {
-                    if (momentukoa2->pcb->pid != pidRunning) {
+            if (momentukoaGerorako != NULL) {
+                QueueElem* momentukoa2 = q->front;
+                while (momentukoa2 != NULL) {
+                    if (momentukoa2->pcb->lehentasuna > lehentasunaRunning) {
                         exekutatu = momentukoa2;
                         break;
                     }
+                    momentukoa2 = momentukoa2->next;            
                 }
-                momentukoa2 = momentukoa2->next;            
             }
         } else {
+            momentukoaGerorako = q->front;
             q->front->pcb->egoera = RUNNING;
         }
-        
-        if (momentukoa->pcb->kont <= 0) {
-            prozesua_bukatu(q, momentukoa);
-            prozesua_hasi(q);
-        } else {
-            if (exekutatu != NULL) {
-                exekutatu->pcb->egoera = WAIT;
-                momentukoa->pcb->egoera = RUNNING;
-                
-                printf("Lehentasuna dela eta %d PID-a duen prozesua itxoin behar du %d PID-a duen prozesua bukatu arte.\n", exekutatu->pcb->pid, momentukoa->pcb->pid);
-                printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoa->pcb->pid, momentukoa->pcb->kont);
-                momentukoa->pcb->kont--;
-            } else {
-                if (momentukoa->pcb->kont == momentukoa->pcb->execDenboraP) {
-                    printf("%d PID-a duen prozesua hasi da.\n", momentukoa->pcb->pid);
-                }
-                
-                printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoa->pcb->pid, momentukoa->pcb->kont);
-                momentukoa->pcb->kont--;
-            }
-        }
 
-        
+        if (exekutatu != NULL) {
+            momentukoaGerorako->pcb->egoera = WAIT;
+            exekutatu->pcb->egoera = RUNNING;
+            
+            printf("Lehentasuna dela eta %d PID-a duen prozesua itxoin behar du %d PID-a duen prozesua bukatu arte.\n", momentukoaGerorako->pcb->pid, exekutatu->pcb->pid);
+            printf("%d PID-a duen prozesua hasi da.\n", exekutatu->pcb->pid);
+            printf("%d PID-a duen prozesuari %d falta zaio.\n", exekutatu->pcb->pid, exekutatu->pcb->kont);
+            exekutatu->pcb->kont--;
+        } else if ((exekutatu == NULL) && (momentukoaGerorako != NULL)) {
+            if (momentukoaGerorako->pcb->kont == momentukoaGerorako->pcb->execDenboraP) {
+                printf("%d PID-a duen prozesua hasi da.\n", momentukoaGerorako->pcb->pid);
+            }
+            
+            printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoaGerorako->pcb->pid, momentukoaGerorako->pcb->kont);
+            momentukoaGerorako->pcb->kont--;
+        }
     }  
 }
 
