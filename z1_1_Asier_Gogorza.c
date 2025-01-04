@@ -23,41 +23,39 @@ typedef enum {
 } state;
 
 typedef struct {
-    pid_t pid;
-    state egoera;
+    pid_t pid; // Prozesuaren identifikatzailea.
+    state egoera; // Prozesuaren exekuzioaren egoera.
     int lehentasuna; // Ezkerretik eskuinea lehentasun handienetik txikienera: 5 4 3 2 1
-    int execDenboraP; // Zenbat scheduler txanda iraungo ditu
-    int kont;
-    int ilara;
+    int execDenboraP; // Zenbat scheduler txanda iraungo ditu.
+    int kont; // Zenbat denbora falta zaio prozesuari bukatzeko.
+    int haria; // Ze harian gorde den.
 } PCB;
 
-// Prozesua ilaran gordetzeko elementua.
 typedef struct {
-    PCB *pcb;                    // Pointer to PCB
-    struct QueueElem *next;           // Pointer to the next node
+    PCB *pcb; // Elementu honen prozesua.
+    struct QueueElem *next; // Hurrengo elementua.
 } QueueElem;
 
-// Prozesuen ilara.
 typedef struct {
-    int kont;
-    QueueElem *front;
-    QueueElem *rear;
+    int kont; // Ilaran dauden elementu kopurua.
+    QueueElem *front; // Aurreko elementua.
+    QueueElem *rear; // Azken elementua.
     pthread_mutex_t lock; // Ilaran eragiketak egiterakoan blokeatu muturrak ondo adierazteko.
 } ProcessQueue;
 
 typedef struct {
-    int id;
-    ProcessQueue *exekuzioIlara;
-} haria; // Pasar x num de haris al ejecutar. En el main crear x haris con el pcb NULL.
+    int id; // Hariaren identifikatzailea.
+    ProcessQueue *exekuzioIlara; // Hariak izango duen prozesuen ilara.
+} haria;
 
 typedef struct {
-    int total_hari_kop; // cpu_kop * core_kop * hari_kop
-    int *harimap; // Harien bitmap
-    haria *hariak;
+    int hari_kop; // Hari kopurua.
+    int *harimap; // Harien bitmap. Hariaren ilara hutsik dagoen adierazten du.
+    haria *hariak; // Hariak gordetzeko bektorea.
 } machine;
 
-ProcessQueue* prozesuenIlara;   
-machine* makina;
+ProcessQueue* prozesuenIlara; // Prozesuak gordetzeko ilara.
+machine* makina; // Hariak dauzkan makina.
 
 //***** METODO LAGUNTZAILEAK *****//
 
@@ -75,7 +73,7 @@ PCB* pcb_sortu(int kont, int ilaraZenb){
     int iraupena = (rand() % (3 - 1)) + 1;
     pcbB->execDenboraP = iraupena;
     pcbB->kont = iraupena;
-    pcbB->ilara = ilaraZenb;
+    pcbB->haria = ilaraZenb;
 
     printf("%d prozesua sortu da %d lehentasunarekin eta %d txanda egongo da bizirik.\n", kont, lehentasuna, iraupena);
     return pcbB;
@@ -94,7 +92,7 @@ ProcessQueue* ilara_sortu() {
     return ilara;
 }
 
-// Function to check if the queue is empty
+// Ilara hutsik dagoen ikusteko.
 int isEmpty(ProcessQueue* q) { return (q->kont == 0); }
 
 void enqueue(ProcessQueue *ilara, PCB *pcb) {
@@ -113,6 +111,11 @@ void enqueue(ProcessQueue *ilara, PCB *pcb) {
         ilara->rear->next = elem_berria; // Link the new node
     }
     ilara->rear = elem_berria; // Update the rear
+
+    if (ilara->kont == 0) {
+        makina->harimap[pcb->haria] = 1;
+    }
+
     ilara->kont++; // Increment kont
     pthread_mutex_unlock(&ilara->lock);
 }
@@ -143,15 +146,12 @@ PCB* dequeue(ProcessQueue *ilara, QueueElem *kendu) {
     //printf("%d PID-a duen prozesua ilaratik kendu da.\n", kendu->pcb->pid);
 
     ilara->kont--; // Decrement kont
-    pthread_mutex_unlock(&ilara->lock);
-}
 
-PCB* peek(ProcessQueue* q) {
-    if (isEmpty(q)) {
-        printf("Ilara hutsik dago\n");
-        return NULL; 
+    if (ilara->kont == 0) {
+        makina->harimap[kendu->pcb->haria] = 0;
     }
-    return q->front->pcb;
+    
+    pthread_mutex_unlock(&ilara->lock);
 }
 
 void prozesua_hasi (ProcessQueue* q) {
@@ -183,7 +183,6 @@ void prozesua_bukatu (ProcessQueue* q, QueueElem* momentukoa) {
     
 }
 void ilararen_administrazioa (ProcessQueue* q) {
-
     if (isEmpty(q)) {
         printf("Ilaran ez daude prozesurik.\n");
     } else {
@@ -237,7 +236,6 @@ void ilararen_administrazioa (ProcessQueue* q) {
             if (momentukoaGerorako->pcb->kont == momentukoaGerorako->pcb->execDenboraP) {
                 printf("%d PID-a duen prozesua hasi da.\n", momentukoaGerorako->pcb->pid);
             }
-            
             printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoaGerorako->pcb->pid, momentukoaGerorako->pcb->kont);
             momentukoaGerorako->pcb->kont--;
         }
@@ -245,19 +243,17 @@ void ilararen_administrazioa (ProcessQueue* q) {
 }
 
 void makina_sortu (int harikop) {
-    
     machine *makinaL = (machine *)malloc(sizeof(machine));
     haria *hariak = (haria*)malloc(sizeof(haria*) * harikop); // Harien bektorea alokatu.
-    makinaL->hariak = hariak;
-    makinaL->total_hari_kop = harikop;
 
     int harimapa[harikop];
     for (int i = 0; i < harikop; i++) {
         harimapa[i] = 0;
     }
-    
-    makinaL->harimap = harimapa;
 
+    makinaL->hariak = hariak;
+    makinaL->hari_kop = harikop;
+    makinaL->harimap = harimapa;
     makina = makinaL;
 }
 
@@ -265,79 +261,65 @@ void makina_sortu (int harikop) {
 
 void *erloju(void *arg)
 {
-    pthread_mutex_lock(&mutex); // Mutexa blokeatu
+    pthread_mutex_lock(&mutex); // Mutexa blokeatu.
     int maiztasuna = *(int*) arg;
     int kontL = 1;
     egina = 0;
     while(1) {
-
-        kontL++; // Kontagailu lokala
-        
-
+        kontL++; // Kontagailu lokala.
         if(kontL == maiztasuna) {
             kontL = 0;
 
-            while(egina < TENP_KOP)
-            {
-                pthread_cond_wait(&cond1, &mutex); // cond1 aldagaiaren zain geratu (ondorioz mutexa desblokeatu)
+            while(egina < TENP_KOP) {
+                pthread_cond_wait(&cond1, &mutex); // cond1 aldagaiaren zain geratu (ondorioz mutexa desblokeatu).
             }
-
             egina = 0;
-
-            pthread_cond_broadcast(&cond2); //timerrak "askatu"
+            pthread_cond_broadcast(&cond2); // timerrak "askatu".
         }
     }
 }
 
 void* timer_sched(void* arg)
 {
-    pthread_mutex_lock(&mutex); // Erlojuak askatzen duen mutexa hartu 
+    pthread_mutex_lock(&mutex); // Erlojuak askatzen duen mutexa hartu.
     int maiztasuna = *(int*) arg;
-
     int kontL = 1;
     int aldia = 0;
     while(1) {
         kontL++;
         egina++;
-
         if (kontL == maiztasuna) {
             aldia++;
             kontL = 1;
             printf("\nTIMER_SCHED %d\n", aldia);
-            for (int i = 0; i < makina->total_hari_kop; i++) {
+            for (int i = 0; i < makina->hari_kop; i++) {
                 printf("\n***** %d. hariko ilaran *****\n", i);
                 ilararen_administrazioa(makina->hariak[i].exekuzioIlara);
-            }
-            
+            } 
         }
 
-        pthread_cond_signal(&cond1); //clock-a "askatu" cond1 aldagaia aktibatuz
-
-        pthread_cond_wait(&cond2, &mutex); //cond2 aldagaiaren zain geratu
+        pthread_cond_signal(&cond1); //clock-a "askatu" cond1 aldagaia aktibatuz.
+        pthread_cond_wait(&cond2, &mutex); //cond2 aldagaiaren zain geratu.
     }
 }
 
 void* timer_proc(void* arg)
 {
-    pthread_mutex_lock(&mutex); //clock-ak askatzen duen mutexa hartu
+    pthread_mutex_lock(&mutex); // clock-ak askatzen duen mutexa hartu.
     int maiztasuna = *(int*) arg;
-
     int kontL = 1;
     int aldia = 0;
     while(1) {
-
         kontL++;
         egina++;
-
         if (kontL == maiztasuna) {
             aldia++;
             printf("\nTIMER_PROC %d\n", aldia);
             kontL = 0;
 
-            
             int hariZenb = 0;
             int kontMin = INT_MAX;
-            int harikop = makina->total_hari_kop;
+            int harikop = makina->hari_kop;
             for (int i = 0; i < harikop; i++) {
                 if (makina->hariak[i].exekuzioIlara->kont < kontMin) {
                     hariZenb = i;
@@ -346,14 +328,13 @@ void* timer_proc(void* arg)
             }
             
             PCB* pcbL = pcb_sortu(kontP, hariZenb);
-
-            enqueue(makina->hariak[hariZenb].exekuzioIlara, pcbL);
-            printf("%d hariko prozesu kopurua: %d\n", hariZenb, makina->hariak[hariZenb].exekuzioIlara->kont);
+            ProcessQueue* momentukoa = makina->hariak[hariZenb].exekuzioIlara;
+            enqueue(momentukoa, pcbL);
+            printf("%d hariko prozesu kopurua: %d\n", hariZenb, momentukoa->kont);
             kontP++;
         }
 
         pthread_cond_signal(&cond1); //clock "askatu" cond1 bidaliz
-
         pthread_cond_wait(&cond2, &mutex); //cond2-ren zain geratu
     }
 }
@@ -404,7 +385,6 @@ int main(int argc, char *argv[])
     for (int i = 0; i < hari_kop; i++) {
         makina->hariak[i].exekuzioIlara = ilara_sortu();
     }
-    
 
     printf("Hariak martxan jarri dira. \n");
 
