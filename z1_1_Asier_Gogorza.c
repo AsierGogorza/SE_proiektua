@@ -8,12 +8,12 @@
 
 #define TENP_KOP 2
 
-#define PHYSICAL_MEMORY_SIZE (16 * 1024 * 1024) // 16 MB
-#define VIRTUAL_MEMORY_SIZE (64 * 1024 * 1024)  // 64 MB
-#define PAGE_SIZE (4 * 1024) // Tamaño de página: 4 KB
-#define WORD_SIZE 4          // Tamaño de palabra: 4 bytes
+#define PHYSICAL_MEMORY_SIZE (16 * 1024 * 1024) // 16 MB.
+#define VIRTUAL_MEMORY_SIZE (64 * 1024 * 1024)  // 64 MB.
+#define PAGE_SIZE (4 * 1024) // Orriaren tamaina: 4 KB.
+#define WORD_SIZE 4          // Hitzaren tamaina: 4 bytes.
 
-// Calcular el número de páginas y marcos
+// Orri eta frame kopurua kalkulatu.
 #define NUM_FRAMES (PHYSICAL_MEMORY_SIZE / PAGE_SIZE)
 #define NUM_PAGES (VIRTUAL_MEMORY_SIZE / PAGE_SIZE)
 
@@ -25,7 +25,7 @@ pthread_cond_t cond1, cond2;
 pthread_t p1, p2, p3;
 int clck, sched, proc;
 
-int kontP, kontT, egina = 0;
+int kontP, egina = 0;
 
 typedef enum {
     READY,
@@ -34,10 +34,9 @@ typedef enum {
     TERMINATED
 } state;
 
-// Estructura de la tabla de páginas
 typedef struct {
-    int frameZenb; // Número de marco físico asignado
-    int valid;        // Bit de validez: 1 si está mapeada, 0 si no
+    int frameZenb; // Esleitutako frame zenbakia.
+    int valid;        // Balidazio bit-a: 1 mapeatuta bada, 0 bestela.
 } OrriTaula;
 
 typedef struct {
@@ -71,9 +70,9 @@ typedef struct {
 } ProcessQueue;
 
 typedef struct {
-    unsigned int orriKop; // Número de página virtual
-    unsigned int frameKop; // Número de marco físico
-    int valid;                // Bit de validez
+    unsigned int orriKop; // Orri birtualaren zenbakia.
+    unsigned int frameKop; // Frame fisikoaren zenbakia.
+    int valid;                // Balidazio bit-a.
 } TLB;
 
 typedef struct {
@@ -97,6 +96,7 @@ typedef struct {
 
 
 unsigned int memoriaFisikoa[PHYSICAL_MEMORY_SIZE / WORD_SIZE];
+unsigned int memoriaBirtuala[VIRTUAL_MEMORY_SIZE / WORD_SIZE];
 OrriTaula orriTaula[NUM_PAGES];
 ProcessQueue* prozesuenIlara;  
 machine* makina;
@@ -105,14 +105,15 @@ machine* makina;
 
 void memoria_hasi() {
     memset(memoriaFisikoa, 0, sizeof(memoriaFisikoa));
+    memset(memoriaBirtuala, 0, sizeof(memoriaBirtuala));
     for (int i = 0; i < NUM_PAGES; i++) {
-        orriTaula[i].frameZenb = -1; // No asignado
-        orriTaula[i].valid = 0;         // No válido
+        orriTaula[i].frameZenb = -1;
+        orriTaula[i].valid = 0;
     }
 }
 
-// Simular la asignación de marcos físicos a páginas virtuales
-void map_page_to_frame(int orriZenb, int frameZenb) {
+// Orri taulako orriei framen esleipenaren simulazioa.
+void orriak_eta_frameak(int orriZenb, int frameZenb) {
     if (orriZenb < 0 || orriZenb >= NUM_PAGES) {
         printf("Error: Orri zenbakia ez da zuzena.\n");
         return;
@@ -122,13 +123,13 @@ void map_page_to_frame(int orriZenb, int frameZenb) {
         return;
     }
     orriTaula[orriZenb].frameZenb = frameZenb;
-    orriTaula[orriZenb].valid = 1; // Marco asignado, página válida
+    orriTaula[orriZenb].valid = 1; // Frame bat esleituta.
 }
 
-// Traducir una dirección virtual a física
+// Helbide birtual bat helbide fisiko batera itzuli.
 unsigned int helbidea_itzuli(unsigned int helbideBirtuala) {
-    unsigned int orriZenb = helbideBirtuala / PAGE_SIZE; // Número de página
-    unsigned int offset = helbideBirtuala % PAGE_SIZE;      // Desplazamiento
+    unsigned int orriZenb = helbideBirtuala / PAGE_SIZE; // Orri zenbakia.
+    unsigned int offset = helbideBirtuala % PAGE_SIZE;      // Desplazamendua.
 
     if (orriZenb >= NUM_PAGES) {
         printf("Error: Helbide birtuala ez da zuzena\n");
@@ -141,7 +142,7 @@ unsigned int helbidea_itzuli(unsigned int helbideBirtuala) {
     }
 
     unsigned int frameZenb = orriTaula[orriZenb].frameZenb;
-    return (frameZenb * PAGE_SIZE) + offset; // helbide fisikoa itzuli.
+    return (frameZenb * PAGE_SIZE) + offset; // Helbide fisikoa itzuli.
 }
 
 unsigned int hitza_irakurri(unsigned int helbideBirtuala) {
@@ -149,7 +150,7 @@ unsigned int hitza_irakurri(unsigned int helbideBirtuala) {
     return memoriaFisikoa[helbideFisikoa / WORD_SIZE];
 }
 
-// Escribir una palabra en una dirección virtual
+// Helbide birtual batean hitz bat idatzi.
 void hitza_idatzi(unsigned int helbideBirtuala, unsigned int value) {
     unsigned int helbideFisikoa = helbidea_itzuli(helbideBirtuala);
     memoriaFisikoa[helbideFisikoa / WORD_SIZE] = value;

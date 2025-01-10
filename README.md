@@ -8,4 +8,4 @@ Repositorioa 3 adarretan banatu dut:
   
     3: 3_zatia (1_zatia + 2_zatia + proiektuaren 3. zatia).
 
-Proiektuaren amaieran, 3 zatiak bukatzerakoan, programa osoa 3_zatia adarean egongo da.
+Proiektuaren amaieran, 3 zatiak bukatzerakoan, programa osoa 3_zatia adarrean egongo da.
