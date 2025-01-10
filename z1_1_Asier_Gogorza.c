@@ -106,6 +106,7 @@ machine* makina;
 
 void memoria_hasi() {
     memset(memoriaFisikoa, 0, sizeof(memoriaFisikoa));
+    memset(memoriaBirtuala, 0, sizeof(memoriaBirtuala));
     for (int i = 0; i < NUM_PAGES; i++) {
         orriTaula[i].frameZenb = -1; // No asignado
         orriTaula[i].valid = 0;         // No válido
