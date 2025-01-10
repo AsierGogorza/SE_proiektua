@@ -13,7 +13,7 @@ pthread_cond_t cond1, cond2;
 pthread_t p1, p2, p3;
 int clck, sched, proc;
 
-int kontP, kontT, egina = 0;
+int kontP, egina = 0;
 
 typedef enum {
     READY,
@@ -236,8 +236,13 @@ void ilararen_administrazioa (ProcessQueue* q) {
             if (momentukoaGerorako->pcb->kont == momentukoaGerorako->pcb->execDenboraP) {
                 printf("%d PID-a duen prozesua hasi da.\n", momentukoaGerorako->pcb->pid);
             }
-            printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoaGerorako->pcb->pid, momentukoaGerorako->pcb->kont);
-            momentukoaGerorako->pcb->kont--;
+            if (momentukoaGerorako->pcb->kont == 0) {
+                prozesua_bukatu(q, momentukoaGerorako);
+                prozesua_hasi(q);
+            } else {
+                printf("%d PID-a duen prozesuari %d falta zaio.\n", momentukoaGerorako->pcb->pid, momentukoaGerorako->pcb->kont);
+                momentukoaGerorako->pcb->kont--;
+            }
         }
     }  
 }
