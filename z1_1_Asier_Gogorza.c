@@ -112,8 +112,8 @@ void memoria_hasi() {
     }
 }
 
-// Orri taulako orriei framen esleipenaren simulazioa.
-void orriak_eta_frameak(int orriZenb, int frameZenb) {
+// Simular la asignación de marcos físicos a páginas virtuales
+void map_page_to_frame(int orriZenb, int frameZenb) {
     if (orriZenb < 0 || orriZenb >= NUM_PAGES) {
         printf("Error: Orri zenbakia ez da zuzena.\n");
         return;
