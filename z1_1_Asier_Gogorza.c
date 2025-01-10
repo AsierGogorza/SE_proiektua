@@ -97,6 +97,7 @@ typedef struct {
 
 
 unsigned int memoriaFisikoa[PHYSICAL_MEMORY_SIZE / WORD_SIZE];
+unsigned int memoriaBirtuala[VIRTUAL_MEMORY_SIZE / WORD_SIZE];
 OrriTaula orriTaula[NUM_PAGES];
 ProcessQueue* prozesuenIlara;  
 machine* makina;
